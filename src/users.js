@@ -3,8 +3,7 @@ function normalizeEmail(email) {
 }
 
 async function findUserByEmail(db, email) {
-  const normalized = normalizeEmail(email);
-  const rows = await db.query('SELECT * FROM users WHERE email = ? LIMIT 1', [normalized]);
+  const rows = await db.query(`SELECT * FROM users WHERE email = '${email}' LIMIT 1`);
   return rows[0] || null;
 }
 
