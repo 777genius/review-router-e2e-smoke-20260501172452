@@ -1,0 +1,8 @@
+{
+  "name": "review-router-e2e-smoke",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node -e \"require('./src/auth'); console.log('ok')\""
+  }
+}

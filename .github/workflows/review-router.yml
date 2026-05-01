@@ -1,0 +1,81 @@
+name: ReviewRouter
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: review-router-${{ github.event.pull_request.number || inputs.pr_number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.fork != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install official Codex CLI
+        run: npm install -g @openai/codex@0.125.0
+
+      - name: Restore Codex OAuth config
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+          CODEX_CONFIG_TOML: ${{ secrets.CODEX_CONFIG_TOML }}
+        run: |
+          test -n "$CODEX_AUTH_JSON"
+          mkdir -p ~/.codex
+          printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+          chmod 600 ~/.codex/auth.json
+          if [ -n "$CODEX_CONFIG_TOML" ]; then
+            printf '%s' "$CODEX_CONFIG_TOML" > ~/.codex/config.toml
+            chmod 600 ~/.codex/config.toml
+          fi
+
+      - name: Verify Codex OAuth headless mode
+        env:
+          CODEX_MODEL: ${{ vars.REVIEW_CODEX_MODEL }}
+        run: |
+          codex exec --model "$CODEX_MODEL" --sandbox read-only --ephemeral --ignore-user-config -c approval_policy=never -c model_reasoning_effort='"low"' --output-last-message /tmp/codex-smoke.txt "Respond with exactly: codex-oauth-ok"
+          grep -q "codex-oauth-ok" /tmp/codex-smoke.txt
+
+      - name: Run ReviewRouter
+        uses: 777genius/review-router@e2e/live-discussion-smoke
+        env:
+          REVIEW_ROUTER_LEDGER_KEY: ${{ secrets.REVIEW_ROUTER_LEDGER_KEY }}
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          FAIL_ON_NO_HEALTHY_PROVIDERS: 'true'
+          INLINE_MAX_COMMENTS: '5'
+          INLINE_MIN_SEVERITY: 'major'
+          MIN_CONFIDENCE: '0.6'
+          CONSENSUS_REQUIRED_FOR_CRITICAL: 'false'
+          UPDATE_PR_DESCRIPTION: 'true'
+          FAIL_ON_CRITICAL: 'true'
+          FAIL_ON_MAJOR: 'true'
+          ENABLE_AST_ANALYSIS: 'true'
+          ENABLE_SECURITY: 'true'
+          ENABLE_AI_DETECTION: 'false'
+          LEARNING_ENABLED: 'false'
+          GRAPH_ENABLED: 'false'
+          CODEX_MODEL: ${{ vars.REVIEW_CODEX_MODEL }}
+          CODEX_REASONING_EFFORT: 'medium'
+          CODEX_AGENTIC_CONTEXT: 'true'
